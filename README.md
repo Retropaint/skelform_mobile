@@ -10,6 +10,7 @@ Building commands usually look like this:
 
 ```bash
 $ npm run install
+$ npx cap add android # only need to run once
 $ npx cap sync android # or ios
 $ npx cap build android # or ios
 ```
