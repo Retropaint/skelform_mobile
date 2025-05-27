@@ -1,0 +1,328 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>SkelForm Editor</title>
+        <base href="/" />
+        <style type="text/css">
+            :root {
+                --color-main: rgb(32, 25, 46);
+                --color-accent: rgb(65, 46, 105);
+                --color-border: rgb(44, 36, 64);
+                font-family: Arial;
+            }
+            :focus {
+                outline: none;
+            }
+
+            body,
+            html {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+            }
+
+            .root {
+                width: 100%;
+                height: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background: #2d2c2c;
+            }
+
+            .main-canvas {
+                display: block;
+                z-index: 1;
+            }
+
+            .resolution-message {
+                display: flex;
+                justify-content: center;
+                height: 100%;
+                position: absolute;
+                width: 100%;
+                z-index: 0;
+                color: #d6d6d6;
+                text-align: center;
+            }
+
+            .file-dialog {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                background: rgb(0, 0, 0, 0.25);
+                visibility: hidden;
+                z-index: 2;
+
+                .container {
+                    position: absolute;
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    flex-direction: column;
+                }
+
+                input {
+                    display: none;
+                }
+            }
+
+            .button {
+                color: #d6d6d6;
+                background: var(--color-accent);
+                padding: 5px;
+                border: 2px solid var(--color-border);
+                cursor: pointer;
+            }            
+
+            .ui-slider {
+                position: absolute;
+                width: 100%;
+                height: 100%;
+                background: rgb(0, 0, 0, 0.1);
+                z-index: 2;
+
+                .container {
+                    position: absolute;
+                    width: 100%;
+                    height: 100%;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    flex-direction: column;
+                }                
+
+                .box{
+                    color: #d6d6d6;
+                    background: var(--color-main);
+                    padding: 5px;
+                    border: 2px solid var(--color-border);
+                }
+
+                .horizontal {
+                    display: flex;
+                    justify-content: space-between;
+                }
+            }
+        </style>
+    <link rel="modulepreload" href="/SkelForm.js" crossorigin="anonymous" integrity="sha384-bjRrU6rR59E36vf6vNjiG8mtvlVgjyFPHGlQJvrnwhoErs+785kvlRiPVrypg1vt"><link rel="preload" href="/SkelForm_bg.wasm" crossorigin="anonymous" integrity="sha384-Xi4iVv16NyjjijRc/13yRU0bSd2dA7wMziCx3FDsOFocvSAvZPD2QMnGSZRhyb6J" as="fetch" type="application/wasm"></head>
+
+    <body>
+        <div id="image-dialog" class="file-dialog">
+            <div class="container">
+                <input
+                    onchange="toggleElement(false, 'image-dialog'); loadImage(event)"
+                    type="file"
+                    accept=".png"
+                    id="img-input"
+                />
+                <label class="button" for="img-input">Upload Image</label>
+                <label
+                    class="button"
+                    onclick="toggleElement(false, 'image-dialog')"
+                    title="test"
+                    >Cancel</label
+                >
+            </div>
+        </div>
+
+        <div id="file-dialog" class="file-dialog">
+            <div class="container">
+                <input
+                    type="file"
+                    onchange="toggleElement(false, 'file-dialog'); loadFile(event)"
+                    id="file-input"
+                />
+                <label class="button" for="file-input">Upload File</label>
+                <label
+                    class="button"
+                    onclick="toggleElement(false, 'file-dialog')"
+                    >Cancel</label
+                >
+            </div>
+        </div>
+
+        <div class="ui-slider" id="ui-slider"
+        >
+            <div class="container">
+                <div class="box">
+                    <p>
+                        Use the slider below to adjust the UI scale.
+                    </p>
+                    <div class="horizontal">
+                        <input id="ui-slider-input" type="range" min="0" max="2" step="0.01"></input>
+                        <label class="button" onclick="toggleElement(false, 'ui-slider'); saveFontScale()">Done</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="resolution-message"
+            class="resolution-message"
+            style="visibility: hidden"
+        >
+            <p>
+                If you see this message, SkelForm failed to load properly.
+                <br />
+                <br />
+                <b>Please refresh the page.</b>
+                <br />
+                <br />
+                If this persists, please adjust the browser zoom level or
+                desktop resolution.
+            </p>
+        </div>
+
+        
+<script type="module">
+import init, * as bindings from '/SkelForm.js';
+const wasm = await init({ module_or_path: '/SkelForm_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+        <div class="root">
+            <canvas class="main-canvas" id="canvas"></canvas>
+        </div>
+
+        <form></form>
+
+        <img src="" id="last-image" />
+
+        <img src="anim_icons.png" id="img-anim-icons" />
+
+        <script>
+            let fileData = [];
+            let imgName = "";
+            let hasLoaded = false;
+            let config = "";
+            loadConfig();
+
+            async function loadConfig() {
+                let data = await localStorage.getItem("skelform_config");
+                if (data === undefined) {
+                    return
+                }
+
+                config = data;
+            }
+
+            function toggleElement(open, id) {
+                let str = open ? "visible" : "hidden";
+                document.getElementById(id).style.visibility = str;
+            }
+
+            function saveFontScale() {
+                let configObj = JSON.parse(config);
+                configObj.ui_scale = getUiSliderValue();
+                saveConfig(JSON.stringify(configObj));
+            }
+
+            function loadImage(event) {
+                var reader = new FileReader();
+                reader.readAsDataURL(event.target.files[0]);
+                imgName = event.target.files[0].name;
+                reader.onload = function (event) {
+                    let img = document.getElementById("last-image");
+                    img.src = event.target.result;
+                };
+            }
+
+            async function loadFile(event) {
+                const file = event.target.files[0];
+                const arrayBuffer = await file.arrayBuffer();
+                fileData = new Uint8Array(arrayBuffer);
+            }
+
+            function getFile() {
+                return fileData;
+            }
+
+            function getImgName() {
+                return imgName;
+            }
+
+            function removeFile() {
+                fileData = [];
+            }
+
+            function removeImage() {
+                document.getElementById("last-image").src = "";
+            }
+
+            function resizeCanvas() {
+                const canvas = document.getElementById("canvas");
+               
+                if(window.innerWidth < 1920) {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                    canvas.style.transform = "scale(" + 
+                        (window.innerWidth / canvas.width) + ", " + 
+                        (window.innerHeight / canvas.height) + ")";
+                } else {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                    canvas.style.transform = "scale(1, 1)";
+                }
+            }
+
+            function getCanvasWidth() {
+                return canvas.width;
+            }
+            function getCanvasHeight() {
+                return canvas.height;
+            }
+
+            saveConfig();
+
+            function loaded() {
+                if (!hasLoaded) {
+                    document.getElementById(
+                        "resolution-message",
+                    ).style.visibility = "visible";
+                    hasLoaded = true;
+                }
+            }
+
+            function getUiSliderValue() {
+                return document.getElementById("ui-slider-input").value;
+            }
+
+            function getConfig() {
+                if (!config) {
+                    return "dummy";
+                }
+                return config;
+            }
+
+            function saveConfig(data) {
+                localStorage.setItem("skelform_config", data);
+            }
+
+            function downloadZip(binary) {
+                var link = document.createElement("a");
+                link.href = window.URL.createObjectURL(
+                    new Blob([binary], { type: "zip" }),
+                );
+                link.setAttribute("test", "sk_a");
+                link.setAttribute("download", "SkelForm_armature.zip");
+                link.click();
+                link.remove();
+            }
+
+            window.addEventListener("resize", resizeCanvas);
+            window.addEventListener("load", resizeCanvas);
+        </script>
+    </body>
+</html>
